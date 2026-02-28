@@ -1,0 +1,13 @@
+{
+	"name": "@zentra/default-plugin",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"svelte": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@zentra/plugin-sdk": "file:../plugin-sdk"
+	}
+}

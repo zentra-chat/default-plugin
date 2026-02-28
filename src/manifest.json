@@ -1,0 +1,12 @@
+{
+	"slug": "core",
+	"name": "Zentra Core",
+	"version": "1.0.0",
+	"description": "Default built-in plugin that provides the standard channel types and core chat UX",
+	"author": "Zentra",
+	"channelTypes": ["text", "announcement", "gallery", "forum", "voice"],
+	"commands": [],
+	"triggers": [],
+	"hooks": ["channel_registry"],
+	"frontendBundle": ""
+}

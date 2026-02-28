@@ -1,0 +1,13 @@
+{
+	"compilerOptions": {
+		"baseUrl": ".",
+		"paths": {
+			"@zentra/plugin-sdk": ["../plugin-sdk/src/index.ts"],
+			"@zentra/plugin-sdk/runtime": ["../plugin-sdk/src/runtime.ts"]
+		},
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"target": "ES2022",
+		"types": ["svelte"]
+	}
+}
