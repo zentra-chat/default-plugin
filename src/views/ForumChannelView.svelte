@@ -46,10 +46,10 @@
 	let creatingTopic = false;
 	let newTopicTitle = '';
 	let newTopicBody = '';
-	let replyBody = '';
-	let postingReply = false;
 	let sortBy: 'latest' | 'popular' = 'latest';
 	let loadedChannelId = '';
+	let MessageInputComponent: any = null;
+	let MessageItemComponent: any = null;
 
 	$: liveMessages = (($activeChannelMessages || []) as ForumMessage[]).filter(Boolean);
 	$: allMessages = mergeMessages(fetchedMessages, liveMessages);
@@ -70,15 +70,26 @@
 		showTopicForm = false;
 		newTopicTitle = '';
 		newTopicBody = '';
-		replyBody = '';
 		void loadChannelMessages($activeChannel.id);
 	}
 
 	onMount(() => {
+		sdk.components.MessageInput().then((mod) => {
+			MessageInputComponent = mod.default;
+		});
+		sdk.components.MessageItem?.().then((mod) => {
+			MessageItemComponent = mod.default;
+		});
+
 		if ($activeChannel?.id) {
 			loadedChannelId = $activeChannel.id;
 			void loadChannelMessages($activeChannel.id);
 		}
+
+		return () => {
+			MessageInputComponent = null;
+			MessageItemComponent = null;
+		};
 	});
 
 	function mergeMessages(base: ForumMessage[], incoming: ForumMessage[]) {
@@ -181,12 +192,10 @@
 
 	function openTopic(topicId: string) {
 		selectedTopicId = topicId;
-		replyBody = '';
 	}
 
 	function closeTopic() {
 		selectedTopicId = null;
-		replyBody = '';
 	}
 
 	async function createTopic() {
@@ -213,31 +222,21 @@
 		}
 	}
 
-	function formatMessageBody(content: string | null | undefined): string {
-		if (!content) return '';
-		const parts = content.trim().split(/\r?\n/);
-		return parts.slice(1).join('\n').trim();
-	}
-
-	async function postReply() {
-		if (!$activeChannel?.id || !selectedTopicId || !replyBody.trim() || postingReply) return;
-
-		postingReply = true;
-		try {
-			const message = (await sdk.api.sendMessage($activeChannel.id, {
-				content: replyBody.trim(),
-				replyToId: selectedTopicId
-			})) as ForumMessage;
-
-			sdk.ui.addMessage($activeChannel.id, message);
-			fetchedMessages = mergeMessages(fetchedMessages, [message]);
-			replyBody = '';
-		} catch (error) {
-			console.error('Failed to post reply:', error);
-			sdk.ui.addToast({ type: 'error', message: 'Failed to post reply' });
-		} finally {
-			postingReply = false;
-		}
+	function normalizeMessage(message: ForumMessage): Record<string, unknown> {
+		return {
+			id: message.id,
+			channelId: message.channelId,
+			authorId: message.authorId,
+			content: message.content ?? '',
+			replyToId: message.replyToId ?? null,
+			isEdited: Boolean(message.updatedAt && message.updatedAt !== message.createdAt),
+			isPinned: false,
+			reactions: [],
+			author: message.author,
+			attachments: message.attachments ?? [],
+			createdAt: message.createdAt,
+			updatedAt: message.updatedAt || message.createdAt
+		};
 	}
 </script>
 
@@ -257,42 +256,20 @@
 
 		<div class="flex-1 overflow-y-auto p-4 space-y-3">
 			<div class="rounded-lg border border-border bg-surface p-4">
-				<div class="flex items-start justify-between gap-3">
-					<div class="flex items-center gap-2 min-w-0">
-						{#if selectedTopic.authorAvatar}
-							<img src={selectedTopic.authorAvatar} alt={selectedTopic.authorName} class="w-8 h-8 rounded-full object-cover" />
-						{:else}
-							<div class="w-8 h-8 rounded-full border border-border bg-background"></div>
-						{/if}
-						<div class="min-w-0">
-							<p class="text-sm font-semibold text-text-primary truncate">{selectedTopic.authorName}</p>
-							<p class="text-xs text-text-muted">{formatRelativeTime(selectedTopic.createdAt)}</p>
-						</div>
-					</div>
+				<div class="flex items-center justify-between gap-3 pb-2">
+					<p class="text-sm font-semibold text-text-primary truncate">{selectedTopic.title}</p>
 					<span class="text-[11px] uppercase tracking-wide text-text-muted bg-background border border-border rounded px-2 py-1">
 						Original post
 					</span>
 				</div>
 
-				<h3 class="text-base font-semibold text-text-primary mt-3">{selectedTopic.title}</h3>
-				{#if selectedTopic.body}
-					<p class="text-sm text-text-secondary whitespace-pre-wrap break-words mt-2">{selectedTopic.body}</p>
-				{/if}
-
-				{#if selectedTopicRootMessage.attachments && selectedTopicRootMessage.attachments.length > 0}
-					<div class="mt-3 space-y-2">
-						{#each selectedTopicRootMessage.attachments as attachment (attachment.id)}
-							{#if attachment.contentType?.startsWith('image/')}
-								<a href={attachment.url} target="_blank" rel="noopener noreferrer" class="block rounded border border-border overflow-hidden bg-background">
-									<img src={attachment.thumbnailUrl || attachment.url} alt={attachment.filename} class="w-full max-h-80 object-cover" loading="lazy" />
-								</a>
-							{:else}
-								<a href={attachment.url} target="_blank" rel="noopener noreferrer" class="block rounded border border-border bg-background px-3 py-2 text-sm text-text-secondary hover:text-text-primary">
-									{attachment.filename}
-								</a>
-							{/if}
-						{/each}
-					</div>
+				{#if MessageItemComponent}
+					{@const MessageItem = MessageItemComponent}
+					<MessageItem
+						message={normalizeMessage(selectedTopicRootMessage)}
+						enableReactions={true}
+						enableReply={true}
+					/>
 				{/if}
 			</div>
 
@@ -302,61 +279,28 @@
 
 			{#if selectedTopicReplies.length === 0}
 				<div class="rounded-lg border border-border bg-background p-4 text-sm text-text-muted">
-					No replies yet. Start the thread.
+					No replies yet. Click Reply on the original post to start the thread.
 				</div>
 			{:else}
 				<div class="space-y-2">
 					{#each selectedTopicReplies as reply (reply.id)}
-						<div class="rounded-lg border border-border bg-background p-3">
-							<div class="flex items-center justify-between gap-2 mb-1">
-								<p class="text-sm font-medium text-text-primary truncate">
-									{reply.author?.displayName || reply.author?.username || 'Unknown user'}
-								</p>
-								<p class="text-xs text-text-muted">{formatRelativeTime(reply.createdAt)}</p>
-							</div>
-							{#if reply.content}
-								<p class="text-sm text-text-secondary whitespace-pre-wrap break-words">{reply.content}</p>
-							{/if}
-
-							{#if reply.attachments && reply.attachments.length > 0}
-								<div class="mt-2 space-y-2">
-									{#each reply.attachments as attachment (attachment.id)}
-										{#if attachment.contentType?.startsWith('image/')}
-											<a href={attachment.url} target="_blank" rel="noopener noreferrer" class="block rounded border border-border overflow-hidden">
-												<img src={attachment.thumbnailUrl || attachment.url} alt={attachment.filename} class="w-full max-h-80 object-cover" loading="lazy" />
-											</a>
-										{:else}
-											<a href={attachment.url} target="_blank" rel="noopener noreferrer" class="block rounded border border-border px-3 py-2 text-sm text-text-secondary hover:text-text-primary">
-												{attachment.filename}
-											</a>
-										{/if}
-									{/each}
-								</div>
-							{/if}
-						</div>
+						{#if MessageItemComponent}
+							{@const MessageItem = MessageItemComponent}
+							<MessageItem
+								message={normalizeMessage(reply)}
+								enableReactions={true}
+								enableReply={true}
+							/>
+						{/if}
 					{/each}
 				</div>
 			{/if}
 		</div>
 
-		<div class="border-t border-border bg-background p-3 space-y-2">
-			<textarea
-				bind:value={replyBody}
-				rows={3}
-				placeholder="Write a reply"
-				class="w-full rounded border border-border bg-surface px-3 py-2 text-sm"
-			></textarea>
-			<div class="flex justify-end">
-				<button
-					type="button"
-					on:click={postReply}
-					disabled={postingReply || !replyBody.trim()}
-					class="px-3 py-2 rounded bg-primary text-primary-foreground text-sm disabled:opacity-60"
-				>
-					{postingReply ? 'Posting...' : 'Post Reply'}
-				</button>
-			</div>
-		</div>
+		{#if MessageInputComponent}
+			{@const MessageInput = MessageInputComponent}
+			<MessageInput channelId={$activeChannel?.id ?? ''} />
+		{/if}
 	{:else}
 		<div class="px-4 py-3 border-b border-border bg-surface space-y-3 shrink-0">
 			<div class="flex items-center justify-between gap-3">
@@ -371,8 +315,8 @@
 							sortBy = 'latest';
 						}}
 						class="px-2 py-1 rounded border text-xs {sortBy === 'latest'
-							? 'border-primary text-primary bg-primary/10'
-							: 'border-border text-text-muted bg-background'}"
+							? 'border-primary text-primary bg-primary/10 font-medium'
+							: 'border-border text-text-secondary bg-background'}"
 					>
 						Latest
 					</button>
@@ -382,8 +326,8 @@
 							sortBy = 'popular';
 						}}
 						class="px-2 py-1 rounded border text-xs {sortBy === 'popular'
-							? 'border-primary text-primary bg-primary/10'
-							: 'border-border text-text-muted bg-background'}"
+							? 'border-primary text-primary bg-primary/10 font-medium'
+							: 'border-border text-text-secondary bg-background'}"
 					>
 						Popular
 					</button>
@@ -392,7 +336,7 @@
 						on:click={() => {
 							showTopicForm = !showTopicForm;
 						}}
-						class="px-3 py-2 rounded bg-primary text-primary-foreground text-sm"
+						class="px-3 py-2 rounded bg-primary text-primary-foreground text-sm font-semibold"
 					>
 						{showTopicForm ? 'Close' : 'New Topic'}
 					</button>
