@@ -8,6 +8,6 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
-		"@zentra/plugin-sdk": "file:../plugin-sdk"
+		"@zentra/plugin-sdk": "^0.2.0"
 	}
 }
